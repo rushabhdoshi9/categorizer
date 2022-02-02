@@ -26,10 +26,7 @@ spec:
                 --model_base_path=/model
           command: 
             - /bin/sh
-          envFrom: 
-            - 
-              configMapRef: 
-                name: config-models
+          
           image: eu.gcr.io/vi2-dev/tfserving
           lifecycle: 
             preStop: 
