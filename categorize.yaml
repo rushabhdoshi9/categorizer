@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: categorizer
+  labels:
+    kind: model
+    gpu: "false"
+spec:
+  selector:
+    matchLabels:
+      app: categorizer
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: categorizer
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-nodepool: inf-cpu-pool
+      containers:
+      - name: user-container
+        image: eu.gcr.io/vi2-dev/tfserving
+        command:
+          - "/bin/sh"
+        args:
+          - -c
+          - |
+            gsutil -m cp -r gs://vi-inference-models-dev/categorizer/2020_efficientnet_b0/0000010 /model && \
+            tensorflow_model_server --rest_api_port=8080 --model_name=categorizer \
+            --model_base_path=/model
+        ports:
+          - containerPort: 8080
+            name: tfserving-port
+        envFrom:
+          - configMapRef:
+              name: config-models
+        resources:
+          limits:
+            cpu: 2
+            memory: 4Gi
+          requests:
+            cpu: 500m
+            memory: 2Gi
+        readinessProbe:
+          successThreshold: 1
+          httpGet:
+            path: /v1/models/categorizer
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    run: categorizer
+  name: categorizer
+spec:
+  ports:
+  - port: 80
+    targetPort: tfserving-port
+  selector:
+    app: categorizer
+
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: categorizer
+  labels:
+    kind: model
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: categorizer
+  minReplicas: 1
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
